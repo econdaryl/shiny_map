@@ -211,7 +211,8 @@ ui <- fluidPage(
       
       p("This app shows year-over-year changes in visitor patterns to Manhattan destinations. 
         Data includes visitors from the entire NYC metropolitan area."),
-      p("Red areas indicate decreased visitors, blue areas indicate increased visitors.")
+      p("Red areas indicate decreased visitors, blue areas indicate increased visitors."),
+      p(strong("Click 'Update Map' to load and display the data."), style = "color: #0066cc;")
     ),
     
     mainPanel(
@@ -223,42 +224,38 @@ ui <- fluidPage(
 # Server
 server <- function(input, output, session) {
   
-  # Load data on startup
-  edgelist_data <- reactive({
-    withProgress(message = 'Loading visitor data...', value = 0.5, {
-      load_data("visitor")
-    })
-  })
-  
-  # Load CPZ CBGs
+  # Load CPZ CBGs first (lightweight)
   cpz_cbgs <- reactive({
     withProgress(message = 'Loading CPZ boundaries...', value = 0.3, {
       get_cpz_cbgs()
     })
   })
   
-  # Update destination choices
+  # Load data only when needed (lazy loading)
+  edgelist_data <- reactive({
+    # Only load when update button is clicked
+    req(input$update_map > 0)
+    withProgress(message = 'Loading visitor data...', value = 0.5, {
+      load_data("visitor")
+    })
+  })
+  
+  # Set up initial destination choices without loading heavy data
   observe({
-    req(edgelist_data())
-    destination_choices <- get_destination_options(edgelist_data())
-    
-    # Default to CPZ
-    default_selection <- "cpz"
+    # Set up choices without requiring heavy data load
+    destination_choices <- list(
+      "Special Areas" = c("CPZ" = "cpz"),
+      "Manhattan County" = c("36061" = "New York County (Manhattan)"),
+      "Individual Manhattan CBGs" = c("Loading..." = "loading")
+    )
     
     updateSelectInput(session, "destinations",
                      choices = destination_choices,
-                     selected = default_selection)
+                     selected = "cpz")
   })
   
-  # Reactive data processing - triggers on button click or when CPZ is initially selected
-  processed_data <- eventReactive({
-    # Trigger on button click OR when CPZ default is loaded
-    if (input$update_map > 0) {
-      input$update_map
-    } else if (!is.null(input$destinations) && "cpz" %in% input$destinations) {
-      input$destinations
-    }
-  }, {
+  # Reactive data processing - only triggers on explicit button click
+  processed_data <- eventReactive(input$update_map, {
     req(input$destinations, input$max_months, input$agg_level, cpz_cbgs())
     
     withProgress(message = 'Processing data...', value = 0.3, {
