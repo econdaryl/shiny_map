@@ -5,6 +5,9 @@
     "appmode": "shiny",
     "entrypoint": "app.R"
   },
+  "r": {
+    "version": "4.3.3"
+  },
   "packages": {
     "BH": {
       "Source": "CRAN",
