@@ -5,7 +5,6 @@ library(dplyr)
 library(DBI)
 library(duckdb)
 library(lubridate)
-library(tidycensus)
 library(RColorBrewer)
 library(tidyr)
 
@@ -41,27 +40,14 @@ load_data <- function(data_type = "visitor") {
   return(edgelist_processed)
 }
 
-# Get CPZ CBGs by spatial intersection
+# Get CPZ CBGs by spatial intersection - now using local data
 get_cpz_cbgs <- function() {
   tryCatch({
     # Load CPZ shapefile
     cpz <- st_read("data/cpz/cpz_map.shp", quiet = TRUE)
     
-    # Get NYC CBG geometries from tidycensus
-    nyc_counties <- c("005", "047", "061", "081", "085")  # NYC county codes
-    
-    nyc_cbgs <- get_acs(
-      geography = "block group",
-      variables = "B00001_001",  # Total population
-      state = "NY",
-      county = nyc_counties,
-      year = 2018,
-      geometry = TRUE
-    ) %>%
-      select(GEOID, geometry) %>% 
-      filter(!is.na(GEOID)) %>%
-      distinct(GEOID, .keep_all = TRUE) %>%  # Remove any duplicates
-      st_transform(crs=32618)
+    # Load NYC CBG geometries from local file (no API call)
+    nyc_cbgs <- st_read("data/nyc_cbgs.gpkg", quiet = TRUE)
     
     # Transform to same CRS
     cpz <- st_transform(cpz, st_crs(nyc_cbgs))
@@ -71,7 +57,7 @@ get_cpz_cbgs <- function() {
     
     return(cpz_cbgs$GEOID)
   }, error = function(e) {
-    # Return hardcoded CPZ CBGs if shapefile not available
+    # Return hardcoded CPZ CBGs if files not available
     return(c("360610001001", "360610002001", "360610004001", "360610006001", 
              "360610008001", "360610010001", "360610012001", "360610014001"))
   })
@@ -127,30 +113,24 @@ resolve_destinations <- function(selections, edgelist, cpz_cbgs) {
   return(unique(destination_cbgs))
 }
 
-# Get NYC Metro Division geographies from tidycensus
+# Get NYC Metro Division geographies from local files - no API calls
 get_nyc_metro_geographies <- function(geo_level) {
-  # NYC Metro Division counties
-  nyc_metro_fips <- c("34003", "34013", "34017", "34019", "34023", "34025", "34027", 
-                      "34029", "34031", "34035", "34037", "34039", "34041", "36005", 
-                      "36047", "36059", "36061", "36079", "36081", "36085", "36087", 
-                      "36103", "36119")
-  
-  if (geo_level == "cbg") {
+  tryCatch({
+    if (geo_level == "cbg") {
+      return(NULL)
+    } else if (geo_level == "tract") {
+      geoms <- st_read("data/nyc_metro_tracts.gpkg", quiet = TRUE) %>%
+        select(GEOID, geometry)
+    } else if (geo_level == "county") {
+      geoms <- st_read("data/nyc_metro_counties.gpkg", quiet = TRUE) %>%
+        select(GEOID, geometry)
+    }
+    
+    return(geoms)
+  }, error = function(e) {
+    warning(paste("Could not load local geography data:", e$message))
     return(NULL)
-  } else if (geo_level == "tract") {
-    geoms <- get_acs(geography = "tract", variables = "B00001_001", 
-                     state = c("NY", "NJ"), year = 2018, geometry = TRUE) %>%
-      mutate(county_fips = substr(GEOID, 1, 5)) %>%
-      filter(county_fips %in% nyc_metro_fips) %>%
-      select(GEOID, geometry)
-  } else if (geo_level == "county") {
-    geoms <- get_acs(geography = "county", variables = "B00001_001", 
-                     state = c("NY", "NJ"), year = 2018, geometry = TRUE) %>%
-      filter(GEOID %in% nyc_metro_fips) %>%
-      select(GEOID, geometry)
-  }
-  
-  return(geoms)
+  })
 }
 
 # Calculate year-over-year changes
