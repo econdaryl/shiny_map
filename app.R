@@ -152,15 +152,14 @@ get_nyc_metro_geographies <- function(geo_level) {
   tryCatch({
     if (geo_level == "tract") {
       geoms <- st_read("data/nyc_metro_tracts.gpkg", quiet = TRUE)
-      # Rename geom column to geometry for consistency
-      names(geoms)[names(geoms) == "geom"] <- "geometry"
     } else if (geo_level == "county") {
       geoms <- st_read("data/nyc_metro_counties.gpkg", quiet = TRUE)  
-      # Rename geom column to geometry for consistency
-      names(geoms)[names(geoms) == "geom"] <- "geometry"
     } else {
       return(NULL)
     }
+    
+    # Keep only GEOID and geometry columns, preserving sf structure
+    geoms <- geoms[, "GEOID"]
     
     return(geoms)
   }, error = function(e) {
