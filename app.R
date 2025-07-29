@@ -34,24 +34,24 @@ load_data <- function(data_type = "visitor") {
   # Load visitor network data with heavy filtering for performance
   dbExecute(con_duck, "CREATE OR REPLACE TABLE edgelist AS SELECT * FROM 'data/visitor_network_home*.parquet';")
   
-  # Apply aggressive filtering: only first 5 months, only CPZ destinations, only NYC Metro origins
-  filter_query <- paste0("SELECT * FROM edgelist 
+  # Apply aggressive filtering and aggregation: pre-aggregate at tract/county level
+  filter_query <- paste0("SELECT 
+    EXTRACT(year FROM date) as year,
+    EXTRACT(month FROM date) as month,
+    substr(cbg_from, 1, 11) as tract_from,
+    substr(cbg_from, 1, 5) as county_from,
+    substr(cbg_to, 1, 5) as county_to,
+    date,
+    SUM(visitors) as visitors
+  FROM edgelist 
     INNER JOIN cbg_cbsa_map ON cbg_from = cbg
     WHERE cbsa = 35620
       AND EXTRACT(year FROM date) IN (2024, 2025)
       AND EXTRACT(month FROM date) BETWEEN 1 AND 5
-      AND cbg_to IN (", cpz_cbg_filter, ");")
+      AND cbg_to IN (", cpz_cbg_filter, ")
+    GROUP BY year, month, tract_from, county_from, county_to, date;")
   
-  edgelist <- dbGetQuery(con_duck, filter_query)
-  
-  edgelist_processed <- edgelist %>% 
-    mutate(
-      year = year(date),
-      month = month(date),
-      county_from = substr(cbg_from, 1, 5),
-      tract_from = substr(cbg_from, 1, 11),
-      county_to = substr(cbg_to, 1, 5)
-    )
+  edgelist_processed <- dbGetQuery(con_duck, filter_query)
   
   dbDisconnect(con_duck)
   message(paste("Loaded", nrow(edgelist_processed), "rows (filtered for performance)"))
@@ -131,17 +131,17 @@ resolve_destinations <- function(selections, edgelist, cpz_cbgs) {
   return(unique(destination_cbgs))
 }
 
-# Get NYC Metro Division geographies from local files - no API calls
+# Get NYC Metro Division geographies from local files - only tract and county
 get_nyc_metro_geographies <- function(geo_level) {
   tryCatch({
-    if (geo_level == "cbg") {
-      return(NULL)
-    } else if (geo_level == "tract") {
+    if (geo_level == "tract") {
       geoms <- st_read("data/nyc_metro_tracts.gpkg", quiet = TRUE) %>%
         select(GEOID, geometry)
     } else if (geo_level == "county") {
       geoms <- st_read("data/nyc_metro_counties.gpkg", quiet = TRUE) %>%
         select(GEOID, geometry)
+    } else {
+      return(NULL)
     }
     
     return(geoms)
@@ -151,23 +151,15 @@ get_nyc_metro_geographies <- function(geo_level) {
   })
 }
 
-# Calculate year-over-year changes
+# Calculate year-over-year changes - now only tract and county levels
 calculate_yoy_change <- function(edgelist, destinations, max_months, agg_level) {
   
-  # Filter data for the selected parameters
+  # Filter data for the selected parameters (data is already aggregated by tract/county)
   filtered_data <- edgelist %>%
-    filter(
-      cbg_to %in% destinations,
-      month <= max_months
-    )
+    filter(month <= max_months)  # CPZ filtering already applied in load_data
   
-  # Aggregate by geography level
-  if (agg_level == "cbg") {
-    agg_data <- filtered_data %>%
-      group_by(cbg_from, year) %>%
-      summarise(total_visitors = sum(visitors, na.rm = TRUE), .groups = "drop") %>%
-      rename(geo_id = cbg_from)
-  } else if (agg_level == "tract") {
+  # Aggregate by geography level (only tract and county supported)
+  if (agg_level == "tract") {
     agg_data <- filtered_data %>%
       group_by(tract_from, year) %>%
       summarise(total_visitors = sum(visitors, na.rm = TRUE), .groups = "drop") %>%
@@ -213,8 +205,7 @@ ui <- fluidPage(
       
       selectInput("agg_level",
                   "Aggregate visitors by:",
-                  choices = list("Census Block Group" = "cbg",
-                                "Census Tract" = "tract", 
+                  choices = list("Census Tract" = "tract", 
                                 "County" = "county"),
                   selected = "tract"),
       
