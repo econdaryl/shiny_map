@@ -174,6 +174,8 @@ calculate_yoy_change <- function(edgelist, destinations, max_months, agg_level) 
   filtered_data <- edgelist %>%
     filter(month <= max_months)  # CPZ filtering already applied in load_data
   
+  message(paste("Filtered data has", nrow(filtered_data), "rows for months <=", max_months))
+  
   # Aggregate by geography level (only tract and county supported)
   if (agg_level == "tract") {
     agg_data <- filtered_data %>%
@@ -187,6 +189,8 @@ calculate_yoy_change <- function(edgelist, destinations, max_months, agg_level) 
       rename(geo_id = county_from)
   }
   
+  message(paste("Aggregated data has", nrow(agg_data), "rows at", agg_level, "level"))
+  
   # Calculate year-over-year change - filter extreme values
   yoy_data <- agg_data %>%
     pivot_wider(names_from = year, values_from = total_visitors, values_fill = 0) %>%
@@ -195,6 +199,8 @@ calculate_yoy_change <- function(edgelist, destinations, max_months, agg_level) 
       yoy_pct_change = ifelse(`2024` > 0, ((`2025` - `2024`) / `2024`) * 100, NA)
     ) %>%
     filter(!is.na(yoy_pct_change) & is.finite(yoy_pct_change) & abs(yoy_pct_change) <= 100)
+  
+  message(paste("Final YoY data has", nrow(yoy_data), "rows"))
   
   return(yoy_data)
 }
@@ -281,14 +287,12 @@ server <- function(input, output, session) {
   
   # Reactive data processing - only triggers on explicit button click
   processed_data <- eventReactive(input$update_map, {
-    req(input$destinations, input$max_months, input$agg_level, cpz_cbgs())
+    req(input$max_months, input$agg_level)
     
     withProgress(message = 'Processing data...', value = 0.3, {
-      # Resolve destinations to CBG list
-      destination_cbgs <- resolve_destinations(input$destinations, edgelist_data(), cpz_cbgs())
-      
+      # Since data is already filtered to CPZ destinations, just process it
       yoy_data <- calculate_yoy_change(edgelist_data(), 
-                                      destination_cbgs, 
+                                      NULL,  # destinations no longer needed
                                       input$max_months, 
                                       input$agg_level)
       
@@ -297,18 +301,20 @@ server <- function(input, output, session) {
       # Get geographic boundaries
       geoms <- get_nyc_metro_geographies(input$agg_level)
       
-      if (!is.null(geoms)) {
+      if (!is.null(geoms) && nrow(yoy_data) > 0) {
         # Join data with geometries
         map_data <- geoms %>%
           left_join(yoy_data, by = c("GEOID" = "geo_id")) %>%
           filter(!is.na(yoy_pct_change))
+        
+        message(paste("Map data created with", nrow(map_data), "features"))
       } else {
-        # For CBG level, we'll need to get geometries differently
         map_data <- NULL
+        message("No map data created - missing geometries or yoy_data")
       }
       
       setProgress(1)
-      return(list(yoy_data = yoy_data, map_data = map_data, destinations = destination_cbgs))
+      return(list(yoy_data = yoy_data, map_data = map_data))
     })
   }, ignoreNULL = FALSE)
   
@@ -377,11 +383,10 @@ server <- function(input, output, session) {
     req(processed_data())
     
     yoy_data <- processed_data()$yoy_data
-    destinations <- processed_data()$destinations
     
     if (nrow(yoy_data) > 0) {
       paste(
-        paste("Manhattan destination CBGs:", length(destinations)),
+        paste("Analysis: CPZ Destinations"),
         paste("Geographic units analyzed:", nrow(yoy_data)),
         paste("Average YoY change:", round(mean(yoy_data$yoy_pct_change, na.rm = TRUE), 1), "%"),
         paste("Median YoY change:", round(median(yoy_data$yoy_pct_change, na.rm = TRUE), 1), "%"),
