@@ -1,12 +1,10 @@
 {
   "version": 1,
   "locale": "en_US.UTF-8",
+  "platform": "4.3.3",
   "metadata": {
     "appmode": "shiny",
     "entrypoint": "app.R"
-  },
-  "r": {
-    "version": "4.3.3"
   },
   "packages": {
     "BH": {
