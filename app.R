@@ -12,6 +12,14 @@ library(tidyr)
 load_data <- function(data_type = "visitor") {
   con_duck <- dbConnect(duckdb::duckdb())
   
+  # Install required DuckDB extensions
+  tryCatch({
+    dbExecute(con_duck, "INSTALL icu;")
+    dbExecute(con_duck, "LOAD icu;")
+  }, error = function(e) {
+    message("Note: Could not install/load icu extension: ", e$message)
+  })
+  
   # Get CPZ CBGs first to filter destinations
   cpz_cbg_list <- tryCatch({
     cpz <- st_read("data/cpz/cpz_map.shp", quiet = TRUE)
@@ -35,26 +43,34 @@ load_data <- function(data_type = "visitor") {
   dbExecute(con_duck, "CREATE OR REPLACE TABLE edgelist AS SELECT * FROM 'data/visitor_network_home*.parquet';")
   
   # Apply aggressive filtering and aggregation: pre-aggregate at tract/county level
-  filter_query <- paste0("SELECT 
-    EXTRACT(year FROM date) as year,
-    EXTRACT(month FROM date) as month,
-    substr(cbg_from, 1, 11) as tract_from,
-    substr(cbg_from, 1, 5) as county_from,
-    substr(cbg_to, 1, 5) as county_to,
-    date,
-    SUM(visitors) as visitors
+  # Use simpler SQL without extensions that might not be available
+  filter_query <- paste0("SELECT *
   FROM edgelist 
     INNER JOIN cbg_cbsa_map ON cbg_from = cbg
     WHERE cbsa = 35620
-      AND EXTRACT(year FROM date) IN (2024, 2025)
-      AND EXTRACT(month FROM date) BETWEEN 1 AND 5
-      AND cbg_to IN (", cpz_cbg_filter, ")
-    GROUP BY year, month, tract_from, county_from, county_to, date;")
+      AND cbg_to IN (", cpz_cbg_filter, ");")
   
-  edgelist_processed <- dbGetQuery(con_duck, filter_query)
+  edgelist <- dbGetQuery(con_duck, filter_query)
+  
+  # Now do the filtering and aggregation in R to avoid DuckDB extension issues
+  edgelist_processed <- edgelist %>%
+    mutate(
+      year = year(date),
+      month = month(date),
+      county_from = substr(cbg_from, 1, 5),
+      tract_from = substr(cbg_from, 1, 11),
+      county_to = substr(cbg_to, 1, 5)
+    ) %>%
+    filter(
+      year %in% c(2024, 2025),
+      month >= 1, month <= 5  # First 5 months only
+    ) %>%
+    # Pre-aggregate by tract and county to reduce data size
+    group_by(year, month, tract_from, county_from, county_to, date) %>%
+    summarise(visitors = sum(visitors, na.rm = TRUE), .groups = "drop")
   
   dbDisconnect(con_duck)
-  message(paste("Loaded", nrow(edgelist_processed), "rows (filtered for performance)"))
+  message(paste("Loaded and processed", nrow(edgelist_processed), "rows (filtered for performance)"))
   return(edgelist_processed)
 }
 
