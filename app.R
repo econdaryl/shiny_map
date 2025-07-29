@@ -151,18 +151,20 @@ resolve_destinations <- function(selections, edgelist, cpz_cbgs) {
 get_nyc_metro_geographies <- function(geo_level) {
   tryCatch({
     if (geo_level == "tract") {
-      geoms <- st_read("data/nyc_metro_tracts.gpkg", quiet = TRUE) %>%
-        select(GEOID, geometry)
+      geoms <- st_read("data/nyc_metro_tracts.gpkg", quiet = TRUE)
+      # Rename geom column to geometry for consistency
+      names(geoms)[names(geoms) == "geom"] <- "geometry"
     } else if (geo_level == "county") {
-      geoms <- st_read("data/nyc_metro_counties.gpkg", quiet = TRUE) %>%
-        select(GEOID, geometry)
+      geoms <- st_read("data/nyc_metro_counties.gpkg", quiet = TRUE)  
+      # Rename geom column to geometry for consistency
+      names(geoms)[names(geoms) == "geom"] <- "geometry"
     } else {
       return(NULL)
     }
     
     return(geoms)
   }, error = function(e) {
-    warning(paste("Could not load local geography data:", e$message))
+    message(paste("ERROR in get_nyc_metro_geographies:", e$message))
     return(NULL)
   })
 }
