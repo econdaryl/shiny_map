@@ -203,9 +203,9 @@ ui <- fluidPage(
       
       selectInput("destinations", 
                   "Select Manhattan Destination(s):",
-                  choices = NULL,  # Will be populated server-side
+                  choices = list("Special Areas" = c("CPZ" = "cpz")),  # Initialize with CPZ
                   multiple = TRUE,
-                  selected = NULL),
+                  selected = "cpz"),
       
       sliderInput("max_months",
                   "Include first X months of each year:",
@@ -270,8 +270,15 @@ server <- function(input, output, session) {
                      selected = default_selection)
   })
   
-  # Reactive data processing
-  processed_data <- eventReactive(input$update_map, {
+  # Reactive data processing - triggers on button click or when CPZ is initially selected
+  processed_data <- eventReactive({
+    # Trigger on button click OR when CPZ default is loaded
+    if (input$update_map > 0) {
+      input$update_map
+    } else if (!is.null(input$destinations) && "cpz" %in% input$destinations) {
+      input$destinations
+    }
+  }, {
     req(input$destinations, input$max_months, input$agg_level, cpz_cbgs())
     
     withProgress(message = 'Processing data...', value = 0.3, {
