@@ -8,24 +8,41 @@ library(lubridate)
 library(RColorBrewer)
 library(tidyr)
 
-# Initialize DuckDB connection
+# Initialize DuckDB connection - now with data filtering for performance
 load_data <- function(data_type = "visitor") {
   con_duck <- dbConnect(duckdb::duckdb())
   
-  # NYC counties (Bronx, Kings, New York, Queens, Richmond)
-  nyc_fips <- data.frame(fips=c("36005", "36047", "36061", "36081", "36085"))
-  duckdb_register(con_duck, "nyc_fips", nyc_fips, overwrite = TRUE)
+  # Get CPZ CBGs first to filter destinations
+  cpz_cbg_list <- tryCatch({
+    cpz <- st_read("data/cpz/cpz_map.shp", quiet = TRUE)
+    nyc_cbgs <- st_read("data/nyc_cbgs.gpkg", quiet = TRUE)
+    cpz <- st_transform(cpz, st_crs(nyc_cbgs))
+    cpz_cbgs <- st_filter(nyc_cbgs, cpz)
+    cpz_cbgs$GEOID
+  }, error = function(e) {
+    # Fallback to hardcoded CPZ CBGs
+    c("360610001001", "360610002001", "360610004001", "360610006001", 
+      "360610008001", "360610010001", "360610012001", "360610014001")
+  })
+  
+  # Create CPZ CBG filter for DuckDB
+  cpz_cbg_filter <- paste0("'", cpz_cbg_list, "'", collapse = ",")
   
   # Load CBG-CBSA mapping
   dbExecute(con_duck, "CREATE OR REPLACE VIEW cbg_cbsa_map AS SELECT * FROM 'data/cbg_cbsa_map.parquet';")
   
-  # Load visitor network data (Manhattan destinations only)
+  # Load visitor network data with heavy filtering for performance
   dbExecute(con_duck, "CREATE OR REPLACE TABLE edgelist AS SELECT * FROM 'data/visitor_network_home*.parquet';")
   
-  edgelist <- dbGetQuery(con_duck, "SELECT * FROM edgelist 
+  # Apply aggressive filtering: only first 5 months, only CPZ destinations, only NYC Metro origins
+  filter_query <- paste0("SELECT * FROM edgelist 
     INNER JOIN cbg_cbsa_map ON cbg_from = cbg
     WHERE cbsa = 35620
-      AND EXTRACT(year FROM date) IN (2024, 2025);")
+      AND EXTRACT(year FROM date) IN (2024, 2025)
+      AND EXTRACT(month FROM date) BETWEEN 1 AND 5
+      AND cbg_to IN (", cpz_cbg_filter, ");")
+  
+  edgelist <- dbGetQuery(con_duck, filter_query)
   
   edgelist_processed <- edgelist %>% 
     mutate(
@@ -37,6 +54,7 @@ load_data <- function(data_type = "visitor") {
     )
   
   dbDisconnect(con_duck)
+  message(paste("Loaded", nrow(edgelist_processed), "rows (filtered for performance)"))
   return(edgelist_processed)
 }
 
@@ -175,7 +193,7 @@ calculate_yoy_change <- function(edgelist, destinations, max_months, agg_level) 
 
 # UI
 ui <- fluidPage(
-  titlePanel("NYC Visitor Year-over-Year Change Map - Manhattan Destinations"),
+  titlePanel("NYC Visitor Year-over-Year Change Map - CPZ Focus"),
   
   sidebarLayout(
     sidebarPanel(
@@ -189,9 +207,9 @@ ui <- fluidPage(
       
       sliderInput("max_months",
                   "Include first X months of each year:",
-                  min = 1, max = 12, value = 3, step = 1),
+                  min = 1, max = 5, value = 3, step = 1),
       
-      helpText("Note: This compares the same months in 2024 vs 2025 (e.g., Jan-Mar 2024 vs Jan-Mar 2025)"),
+      helpText("Note: This compares the same months in 2024 vs 2025 (e.g., Jan-Mar 2024 vs Jan-Mar 2025). Data is limited to first 5 months for performance."),
       
       selectInput("agg_level",
                   "Aggregate visitors by:",
@@ -209,8 +227,8 @@ ui <- fluidPage(
       
       hr(),
       
-      p("This app shows year-over-year changes in visitor patterns to Manhattan destinations. 
-        Data includes visitors from the entire NYC metropolitan area."),
+      p("This app shows year-over-year changes in visitor patterns to the Congestion Pricing Zone (CPZ). 
+        Data includes visitors from the entire NYC metropolitan area, limited to first 5 months for performance."),
       p("Red areas indicate decreased visitors, blue areas indicate increased visitors."),
       p(strong("Click 'Update Map' to load and display the data."), style = "color: #0066cc;")
     ),
