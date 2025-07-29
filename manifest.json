@@ -1,0 +1,96 @@
+{
+  "version": 1,
+  "locale": "en_US.UTF-8",
+  "metadata": {
+    "appmode": "shiny",
+    "entrypoint": "app.R"
+  },
+  "packages": {
+    "BH": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com"
+    },
+    "DBI": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com"
+    },
+    "R6": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com"
+    },
+    "RColorBrewer": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com"
+    },
+    "Rcpp": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com"
+    },
+    "arrow": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com"
+    },
+    "bit": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com"
+    },
+    "bit64": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com"
+    },
+    "dplyr": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com"
+    },
+    "duckdb": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com"
+    },
+    "htmltools": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com"
+    },
+    "htmlwidgets": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com"
+    },
+    "leaflet": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com"
+    },
+    "lubridate": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com"
+    },
+    "sf": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com"
+    },
+    "shiny": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com"
+    },
+    "tidycensus": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com"
+    },
+    "tidyr": {
+      "Source": "CRAN",
+      "Repository": "https://cran.rstudio.com"
+    }
+  },
+  "files": {
+    "app.R": {
+      "checksum": "auto"
+    },
+    "data/cbg_cbsa_map.parquet": {
+      "checksum": "auto"
+    },
+    "data/visitor_network_home2024.parquet": {
+      "checksum": "auto"
+    },
+    "data/visitor_network_home2025.parquet": {
+      "checksum": "auto"
+    }
+  }
+}
